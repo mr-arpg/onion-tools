@@ -1,6 +1,6 @@
 # 🧅 Onion Tools
 
-> *Peel back the layers. Animate with confidence.*
+> *The last forbidden feature in PowerPoint: frame-by-frame Animation!*
 
 **Onion Tools** is a PowerPoint add-in for frame-by-frame animation — onion-skin guides, smart backgrounds, and one-click GIF export, right inside your deck.
 
@@ -75,10 +75,12 @@ onion-tools/
 
 ## 📜 License
 
-Use it, share it, animate cool stuff. *(Add a license file here if you want something formal.)*
+**[CC BY-NC 4.0](LICENSE)** — free to use, share, and edit. Please don’t sell it or use it in paid work without asking first.
+
+Full details in [LICENSE](LICENSE) · [Creative Commons deed](https://creativecommons.org/licenses/by-nc/4.0/)
 
 ---
 
 <p align="center">
-  <sub>Made with layers 🧅 — because good animation is never just one slide deep.</sub>
+  <sub>Made with layers 🧅</sub>
 </p>
