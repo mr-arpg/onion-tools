@@ -1,0 +1,25 @@
+# Build artifacts
+*.ppam
+*.pptm
+*.pptx
+*.tmp
+
+# Demo / local test exports
+*.gif
+*.mp4
+test_*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*~
+
+# Local overrides
+.env
