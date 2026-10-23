@@ -8,18 +8,18 @@ Option Explicit
 
 ' Shape name kept for compatibility with decks that already use this guide
 Private Const GUIDE_NAME As String = "GuiaOnionSkin"
+Private Const GUIDE_SLIDE_TAG As String = "OnionGuideBg"
 Private Const GUIDE_OPACITY As Single = 0.75   ' 0 = opaque | 1 = invisible
 Private Const SETTINGS_APP_NAME As String = "OnionSkinTools"
 Private Const SETTINGS_SECTION As String = "Preferences"
 Private Const SETTINGS_ANIMATION_MODE As String = "AnimationMode"
 Private Const SETTINGS_OUTPUT_FOLDER As String = "OutputFolder"
-Private Const SETTINGS_BG_EVERY_NEW_SLIDE As String = "BackgroundEveryNewSlide"
+Private Const SETTINGS_EXPORT_SCOPE As String = "ExportScope"
+Private Const EXPORT_SCOPE_ALL As String = "All"
+Private Const EXPORT_SCOPE_SELECTED As String = "Selected"
 Private Const ANIMATION_MODE_OFF As String = "Off"
 Private Const ANIMATION_MODE_CLASSIC As String = "Classic"
 Private Const ANIMATION_MODE_DUPLICATE As String = "Duplicate"
-Private Const BG_TAG As String = "OnionBg"
-Private Const BG_GROUP_TAG As String = "OnionBgGroupId"
-Private Const BG_EDITABLE_COPY_TAG As String = "OnionBgEditableCopy"
 
 ' Hardcoded so the module compiles on PowerPoint builds where these
 ' enum members were added later than the rest of PpSaveAsFileType /
@@ -29,6 +29,9 @@ Private Const PPT_SAVE_AS_OPEN_XML_PRESENTATION As Long = 24
 Private Const PPT_SAVE_AS_OPEN_XML_PRESENTATION_MACRO_ENABLED As Long = 25
 Private Const PPT_MEDIA_TASK_DONE As Long = 3
 Private Const PPT_MEDIA_TASK_FAILED As Long = 4
+' Default slide duration for GIF / video export when the slide has no
+' user-defined transition timer. (PowerPoint UI: 00:00,01 = 1/100 s)
+Private Const DEFAULT_FRAME_ADVANCE_SECONDS As Single = 0.01
 
 #If VBA7 Then
     Private Declare PtrSafe Sub OST_Sleep Lib "kernel32" Alias "Sleep" (ByVal dwMilliseconds As Long)
@@ -59,13 +62,12 @@ Sub CreateGuide()
     CreateGuideForSlideIndex idx, False
 End Sub
 
-Public Sub CreateGuideForSlideIndex(ByVal idx As Integer, Optional ByVal silent As Boolean = False)
+Public Sub CreateGuideForSlideIndex(ByVal idx As Integer, Optional ByVal silent As Boolean = False, Optional ByVal prs As Presentation = Nothing)
     Dim sldCurrent       As Slide
     Dim sldPrevious      As Slide
-    Dim shp              As Shape
     Dim hiddenOnPrev     As Collection
+    Dim hadPrevBgGuide   As Boolean
     Dim imgTemp          As String
-    Dim w As Single, h As Single
 
     If idx = 0 Then
         If Not silent Then
@@ -84,59 +86,37 @@ Public Sub CreateGuideForSlideIndex(ByVal idx As Integer, Optional ByVal silent 
         Exit Sub
     End If
 
-    Set sldCurrent = ActivePresentation.Slides(idx)
-    Set sldPrevious = ActivePresentation.Slides(idx - 1)
+    If prs Is Nothing Then Set prs = ActivePresentation
+    Set sldCurrent = prs.Slides(idx)
+    Set sldPrevious = prs.Slides(idx - 1)
 
-    ' --- check if a guide already exists and ask for confirmation ---
-    Dim shpCheck As Shape
-    For Each shpCheck In sldCurrent.Shapes
-        If shpCheck.Name = GUIDE_NAME Then
-            If Not silent Then
-                Dim resp As Integer
-                resp = MsgBox("A guide already exists on this slide." & vbCrLf & "Replace it?", _
-                              vbYesNo + vbQuestion, "Onion Skin Tools")
-                If resp = vbNo Then Exit Sub
-            End If
-            On Error Resume Next
-            shpCheck.Locked = msoFalse
-            On Error GoTo 0
-            shpCheck.Delete
-            Exit For
+    If SlideHasGuide(sldCurrent) Then
+        If Not silent Then
+            Dim resp As Integer
+            resp = MsgBox("A guide already exists on this slide." & vbCrLf & "Replace it?", _
+                          vbYesNo + vbQuestion, "Onion Skin Tools")
+            If resp = vbNo Then Exit Sub
         End If
-    Next shpCheck
-
-    ' --- export previous slide as a temporary image ---
-    w = ActivePresentation.PageSetup.SlideWidth
-    h = ActivePresentation.PageSetup.SlideHeight
+        ClearGuideOnSlide sldCurrent
+    End If
 
     ' unique file name to avoid conflicts when multiple decks are open
-    imgTemp = Environ("TEMP") & "\ost_" & idx & "_" & Format(Now, "hhmmss") & ".png"
+    imgTemp = Environ("TEMP") & "\ost_" & idx & "_" & format(Now, "hhmmss") & ".png"
 
-    ' --- Hide internal guide/background layers on the previous slide before export ---
-    ' Export captures all visible shapes; without this, old guides would stack and
-    ' background shapes would be baked into the ghost even though they are copied
-    ' forward as a solid layer.
+    ' --- Hide the previous guide before export ---
+    ' Export captures the slide background and visible shapes; without this,
+    ' old guides would stack from slide to slide.
     Set hiddenOnPrev = HideInternalExportShapes(sldPrevious)
+    hadPrevBgGuide = SuspendSlideGuideBackground(sldPrevious)
 
     sldPrevious.Export imgTemp, "PNG"
 
-    ' --- Show hidden internal layers again right after export ---
+    ' --- Show the previous guide again right after export ---
+    RestoreSlideGuideBackground sldPrevious, hadPrevBgGuide
     RestoreHiddenShapes hiddenOnPrev
 
-    ' --- create ghost rectangle ---
-    Set shp = sldCurrent.Shapes.AddShape(msoShapeRectangle, 0, 0, w, h)
-
-    With shp
-        .Name = GUIDE_NAME
-        .Line.Visible = msoFalse
-        .Fill.UserPicture imgTemp
-        .Fill.Transparency = GUIDE_OPACITY
-        .ZOrder msoSendToBack
-        ' .Locked exists in Office 2013+; ignore error on older versions
-        On Error Resume Next
-        .Locked = msoTrue
-        On Error GoTo 0
-    End With
+    ' --- Put the ghost in the slide background so it cannot be selected or deleted ---
+    ApplyGuideToSlideBackground sldCurrent, imgTemp
 
     ' --- delete temporary file ---
     On Error Resume Next
@@ -151,8 +131,6 @@ End Sub
 ' -----------------------------------------------------------------
 Sub ClearCurrentGuide()
     Dim sld     As Slide
-    Dim i       As Integer
-    Dim count   As Integer
     Dim idx     As Integer
 
     On Error Resume Next
@@ -167,19 +145,8 @@ Sub ClearCurrentGuide()
     End If
 
     Set sld = ActivePresentation.Slides(idx)
-    count = 0
 
-    For i = sld.Shapes.count To 1 Step -1
-        If sld.Shapes(i).Name = GUIDE_NAME Then
-            On Error Resume Next
-            sld.Shapes(i).Locked = msoFalse
-            On Error GoTo 0
-            sld.Shapes(i).Delete
-            count = count + 1
-        End If
-    Next i
-
-    If count = 0 Then
+    If Not ClearGuideOnSlide(sld) Then
         MsgBox "No guide found on the current slide.", _
                vbInformation, "Onion Skin Tools"
     End If
@@ -191,20 +158,13 @@ End Sub
 ' -----------------------------------------------------------------
 Sub ClearGuides()
     Dim sld     As Slide
-    Dim i       As Integer
     Dim count   As Integer
     count = 0
 
     For Each sld In ActivePresentation.Slides
-        For i = sld.Shapes.count To 1 Step -1
-            If sld.Shapes(i).Name = GUIDE_NAME Then
-                On Error Resume Next
-                sld.Shapes(i).Locked = msoFalse
-                On Error GoTo 0
-                sld.Shapes(i).Delete
-                count = count + 1
-            End If
-        Next i
+        If ClearGuideOnSlide(sld) Then
+            count = count + 1
+        End If
     Next sld
 
     If count = 0 Then
@@ -218,157 +178,79 @@ End Sub
 
 
 ' -----------------------------------------------------------------
-'  3. BACKGROUND SHAPES - persistent fixed scene elements
+'  3. NEW SLIDE - guide and duplicate mode
 ' -----------------------------------------------------------------
-Private Function IsBackgroundShape(ByVal shp As Shape) As Boolean
+Private Function SlideHasBackgroundGuide(ByVal sld As Slide) As Boolean
     On Error Resume Next
-    IsBackgroundShape = (shp.Tags(BG_TAG) = "1")
+    SlideHasBackgroundGuide = (sld.Tags(GUIDE_SLIDE_TAG) = "1")
     On Error GoTo 0
 End Function
 
-Private Function GetShapeTag(ByVal shp As Shape, ByVal tagName As String) As String
-    On Error Resume Next
-    GetShapeTag = shp.Tags(tagName)
-    On Error GoTo 0
-End Function
-
-Private Sub MarkShapeAsBackground(ByVal shp As Shape, ByVal groupId As String)
-    On Error Resume Next
-    shp.Tags.Delete BG_EDITABLE_COPY_TAG
-    shp.Tags.Delete BG_TAG
-    shp.Tags.Delete BG_GROUP_TAG
-    shp.Tags.Add BG_TAG, "1"
-    If groupId <> "" Then shp.Tags.Add BG_GROUP_TAG, groupId
-    shp.Locked = msoTrue
-    On Error GoTo 0
-End Sub
-
-Private Sub UnmarkShapeAsBackground(ByVal shp As Shape)
-    On Error Resume Next
-    shp.Tags.Delete BG_TAG
-    shp.Tags.Delete BG_GROUP_TAG
-    shp.Tags.Delete BG_EDITABLE_COPY_TAG
-    shp.Locked = msoFalse
-    On Error GoTo 0
-End Sub
-
-Private Function NewBackgroundGroupId() As String
-    Randomize
-    NewBackgroundGroupId = "bg_" & Format(Now, "yyyymmddhhmmss") & "_" & CStr(Int(Rnd() * 1000000))
-End Function
-
-Private Function GetSelectedShapes() As ShapeRange
-    On Error Resume Next
-    If ActiveWindow.Selection.Type = ppSelectionShapes Then
-        Set GetSelectedShapes = ActiveWindow.Selection.ShapeRange
-    End If
-    On Error GoTo 0
-End Function
-
-Sub SetSelectedBackgroundShapes()
-    Dim selectedShapes As ShapeRange
-    Set selectedShapes = GetSelectedShapes()
-
-    If selectedShapes Is Nothing Then
-        MsgBox "Select one or more shapes first.", vbInformation, "Onion Skin Tools"
-        Exit Sub
-    End If
-
-    Dim sld As Slide
-    On Error Resume Next
-    Set sld = ActiveWindow.View.Slide
-    On Error GoTo 0
-
-    If sld Is Nothing Then
-        MsgBox "Could not determine the current slide.", vbExclamation, "Onion Skin Tools"
-        Exit Sub
-    End If
-
-    Dim groupId As String
-    groupId = NewBackgroundGroupId()
-
-    Dim i As Long
-    Dim pastedRange As ShapeRange
-    For i = 1 To selectedShapes.Count
-        selectedShapes(i).Copy
-        Set pastedRange = sld.Shapes.Paste
-        MarkShapeAsBackground pastedRange(1), groupId
-        pastedRange(1).ZOrder msoSendToBack
-
-        ' Keep the chosen figure as a normal editable shape; only the copy is background.
-        UnmarkShapeAsBackground selectedShapes(i)
-    Next i
-
-    SendGuideToBack sld
-End Sub
-
-Public Function GetBackgroundEveryNewSlide() As Boolean
-    ' When True (default), each new slide (Enter) receives a locked copy of the
-    ' background shapes from the previous slide. When False, that automatic
-    ' propagation is skipped (guide / duplicate behaviour still runs).
-    Dim v As String
-    v = GetSetting(SETTINGS_APP_NAME, SETTINGS_SECTION, SETTINGS_BG_EVERY_NEW_SLIDE, "1")
-    GetBackgroundEveryNewSlide = (v = "1")
-End Function
-
-Public Sub SaveBackgroundEveryNewSlide(ByVal enabled As Boolean)
-    SaveSetting SETTINGS_APP_NAME, SETTINGS_SECTION, SETTINGS_BG_EVERY_NEW_SLIDE, IIf(enabled, "1", "0")
-    If Not gRibbon Is Nothing Then
-        gRibbon.Invalidate
-    End If
-End Sub
-
-Public Sub ToggleBackgroundEveryNewSlide()
-    SaveBackgroundEveryNewSlide Not GetBackgroundEveryNewSlide()
-End Sub
-
-Sub RemoveSelectedBackgroundShapes()
-    Dim selectedShapes As ShapeRange
-    Set selectedShapes = GetSelectedShapes()
-
-    If selectedShapes Is Nothing Then
-        MsgBox "Select one or more shapes first.", vbInformation, "Onion Skin Tools"
-        Exit Sub
-    End If
-
-    Dim i As Long
-    For i = 1 To selectedShapes.Count
-        UnmarkShapeAsBackground selectedShapes(i)
-    Next i
-End Sub
-
-Sub ClearBackgroundShapesOnCurrentSlide()
-    Dim idx As Integer
-    On Error Resume Next
-    idx = ActiveWindow.View.Slide.SlideIndex
-    On Error GoTo 0
-
-    If idx = 0 Then
-        MsgBox "Could not determine the current slide.", vbExclamation, "Onion Skin Tools"
-        Exit Sub
-    End If
-
-    ClearBackgroundShapesOnSlide ActivePresentation.Slides(idx)
-End Sub
-
-Sub ClearBackgroundShapesOnAllSlides()
-    Dim sld As Slide
-    For Each sld In ActivePresentation.Slides
-        ClearBackgroundShapesOnSlide sld
-    Next sld
-End Sub
-
-Private Sub ClearBackgroundShapesOnSlide(ByVal sld As Slide)
+Private Function SlideHasShapeGuide(ByVal sld As Slide) As Boolean
     Dim shp As Shape
     For Each shp In sld.Shapes
-        If IsBackgroundShape(shp) Then
-            UnmarkShapeAsBackground shp
-        ElseIf GetShapeTag(shp, BG_EDITABLE_COPY_TAG) = "1" Then
-            On Error Resume Next
-            shp.Tags.Delete BG_EDITABLE_COPY_TAG
-            On Error GoTo 0
+        If shp.Name = GUIDE_NAME Then
+            SlideHasShapeGuide = True
+            Exit Function
         End If
     Next shp
+End Function
+
+Private Function SlideHasGuide(ByVal sld As Slide) As Boolean
+    SlideHasGuide = SlideHasBackgroundGuide(sld) Or SlideHasShapeGuide(sld)
+End Function
+
+Private Sub ApplyGuideToSlideBackground(ByVal sld As Slide, ByVal imagePath As String)
+    On Error Resume Next
+    sld.FollowMasterBackground = msoFalse
+    With sld.Background.Fill
+        .Visible = msoTrue
+        .UserPicture imagePath
+        .Transparency = GUIDE_OPACITY
+    End With
+    sld.Tags.Delete GUIDE_SLIDE_TAG
+    sld.Tags.Add GUIDE_SLIDE_TAG, "1"
+    On Error GoTo 0
+End Sub
+
+Private Function ClearGuideOnSlide(ByVal sld As Slide) As Boolean
+    Dim i As Long
+    Dim removed As Boolean
+
+    If SlideHasBackgroundGuide(sld) Then
+        On Error Resume Next
+        sld.FollowMasterBackground = msoTrue
+        sld.Tags.Delete GUIDE_SLIDE_TAG
+        On Error GoTo 0
+        removed = True
+    End If
+
+    For i = sld.Shapes.count To 1 Step -1
+        If sld.Shapes(i).Name = GUIDE_NAME Then
+            On Error Resume Next
+            sld.Shapes(i).Locked = msoFalse
+            sld.Shapes(i).Delete
+            On Error GoTo 0
+            removed = True
+        End If
+    Next i
+
+    ClearGuideOnSlide = removed
+End Function
+
+Private Function SuspendSlideGuideBackground(ByVal sld As Slide) As Boolean
+    If Not SlideHasBackgroundGuide(sld) Then Exit Function
+    On Error Resume Next
+    sld.FollowMasterBackground = msoTrue
+    On Error GoTo 0
+    SuspendSlideGuideBackground = True
+End Function
+
+Private Sub RestoreSlideGuideBackground(ByVal sld As Slide, ByVal wasSuspended As Boolean)
+    If Not wasSuspended Then Exit Sub
+    On Error Resume Next
+    sld.FollowMasterBackground = msoFalse
+    On Error GoTo 0
 End Sub
 
 Private Function HideInternalExportShapes(ByVal sld As Slide) As Collection
@@ -377,7 +259,7 @@ Private Function HideInternalExportShapes(ByVal sld As Slide) As Collection
 
     Dim shp As Shape
     For Each shp In sld.Shapes
-        If shp.Name = GUIDE_NAME Or IsBackgroundShape(shp) Or GetShapeTag(shp, BG_EDITABLE_COPY_TAG) = "1" Then
+        If shp.Name = GUIDE_NAME Then
             If shp.Visible <> msoFalse Then
                 shp.Visible = msoFalse
                 hiddenShapes.Add shp
@@ -400,52 +282,40 @@ Private Sub RestoreHiddenShapes(ByVal hiddenShapes As Collection)
     On Error GoTo 0
 End Sub
 
-Private Sub CopyBackgroundShapesToSlide(ByVal sourceSlide As Slide, ByVal targetSlide As Slide)
-    Dim shp As Shape
-    Dim pastedRange As ShapeRange
-
-    For Each shp In sourceSlide.Shapes
-        If IsBackgroundShape(shp) Then
-            shp.Copy
-            Set pastedRange = targetSlide.Shapes.Paste
-            MarkShapeAsBackground pastedRange(1), GetShapeTag(shp, BG_GROUP_TAG)
-            pastedRange(1).ZOrder msoSendToBack
-        End If
-    Next shp
-
-    SendGuideToBack targetSlide
-End Sub
-
-Private Sub SendGuideToBack(ByVal sld As Slide)
-    Dim shp As Shape
+Private Function IsEmptyPlaceholder(ByVal shp As Shape) As Boolean
     On Error Resume Next
-    Set shp = sld.Shapes(GUIDE_NAME)
-    If Not shp Is Nothing Then shp.ZOrder msoSendToBack
+    If shp.Type = msoPlaceholder Then
+        If shp.HasTextFrame = msoTrue Then
+            If shp.TextFrame.HasText = msoFalse Then
+                IsEmptyPlaceholder = True
+            End If
+        Else
+            IsEmptyPlaceholder = True
+        End If
+    End If
     On Error GoTo 0
-End Sub
+End Function
 
 Private Sub CopySlideShapesForDuplicateMode(ByVal sourceSlide As Slide, ByVal targetSlide As Slide)
     Dim shp As Shape
     Dim pastedRange As ShapeRange
 
     For Each shp In sourceSlide.Shapes
-        If shp.Name <> GUIDE_NAME And GetShapeTag(shp, BG_EDITABLE_COPY_TAG) <> "1" Then
+        If shp.Name <> GUIDE_NAME And Not IsEmptyPlaceholder(shp) Then
+            On Error Resume Next
+            Err.Clear
             shp.Copy
-            Set pastedRange = targetSlide.Shapes.Paste
-
-            ' Background shapes copied as part of Duplicate mode are the editable
-            ' top-layer copy. The locked/tagged authoritative copy is added separately.
-            If IsBackgroundShape(shp) Then
-                UnmarkShapeAsBackground pastedRange(1)
-                pastedRange(1).Tags.Add BG_EDITABLE_COPY_TAG, "1"
+            If Err.Number = 0 Then
+                Set pastedRange = targetSlide.Shapes.Paste
             End If
+            On Error GoTo 0
         End If
     Next shp
 End Sub
 
 Private Sub ClearShapesOnSlide(ByVal sld As Slide)
     Dim i As Long
-    For i = sld.Shapes.Count To 1 Step -1
+    For i = sld.Shapes.count To 1 Step -1
         On Error Resume Next
         sld.Shapes(i).Locked = msoFalse
         sld.Shapes(i).Delete
@@ -460,17 +330,17 @@ Public Sub HandleNewSlideForAnimationMode(ByVal sldNew As Slide)
     If mode = ANIMATION_MODE_OFF Then Exit Sub
     If sldNew.SlideIndex <= 1 Then Exit Sub
 
+    Dim prs As Presentation
+    Set prs = sldNew.Parent
+
     Dim sldPrevious As Slide
-    Set sldPrevious = ActivePresentation.Slides(sldNew.SlideIndex - 1)
+    Set sldPrevious = prs.Slides(sldNew.SlideIndex - 1)
 
     If mode = ANIMATION_MODE_DUPLICATE Then
         ClearShapesOnSlide sldNew
     End If
 
-    CreateGuideForSlideIndex sldNew.SlideIndex, True
-    If GetBackgroundEveryNewSlide() Then
-        CopyBackgroundShapesToSlide sldPrevious, sldNew
-    End If
+    CreateGuideForSlideIndex sldNew.SlideIndex, True, prs
 
     If mode = ANIMATION_MODE_DUPLICATE Then
         CopySlideShapesForDuplicateMode sldPrevious, sldNew
@@ -490,7 +360,7 @@ Public Function GetOutputFolder() As String
     If path = "" Or Not FolderExists(path) Then
         On Error Resume Next
         If Not ActivePresentation Is Nothing Then
-            If ActivePresentation.Path <> "" Then path = ActivePresentation.Path
+            If ActivePresentation.path <> "" Then path = ActivePresentation.path
         End If
         On Error GoTo 0
     End If
@@ -544,168 +414,419 @@ End Sub
 
 
 ' -----------------------------------------------------------------
-'  3b. EXPORT GIF / EXPORT VIDEO
-'      Both formats and both with/without guides go through the same
-'      pipeline: temp .pptx copy -> (optional) hide guides -> render
-'      -> reveal in Explorer. No native dialog, no popup, output goes
-'      to the configured output folder.
+'  3b. EXPORT
+'      Guides are always left out of the file. GIF and video render a
+'      temp copy when only some slides are included. Images are written
+'      straight from the open deck. Output goes to the configured folder.
 ' -----------------------------------------------------------------
-Sub ExportGIF(ByVal includeGuides As Boolean)
-    ExportViaCopy "gif", includeGuides
+Sub ExportGIF()
+    ExportViaCopy "gif"
 End Sub
 
-Sub ExportVideo(ByVal includeGuides As Boolean)
-    ExportViaCopy "video", includeGuides
+Sub ExportVideo()
+    ExportViaCopy "video"
 End Sub
 
-Private Function HideGuidesInPresentation(ByVal prs As Presentation) As Collection
-    Dim hiddenGuides As Collection
-    Set hiddenGuides = New Collection
-
+Sub ExportImages(ByVal imageFormat As String)
+    Dim prs As Presentation
+    Dim ids() As Long
+    Dim i As Long
     Dim sld As Slide
-    Dim shp As Shape
+    Dim hidden As Collection
+    Dim outDir As String
+    Dim baseName As String
+    Dim ext As String
+    Dim filePath As String
+    Dim firstPath As String
+    Dim pxW As Long
+    Dim pxH As Long
+    Dim saveErr As Long
 
-    For Each sld In prs.Slides
-        For Each shp In sld.Shapes
-            If shp.Name = GUIDE_NAME Then
-                If shp.Visible <> msoFalse Then
-                    shp.Visible = msoFalse
-                    hiddenGuides.Add shp
-                End If
+    If ActivePresentation Is Nothing Then Exit Sub
+    Set prs = ActivePresentation
+    If Not TryGetExportSlideIDs(prs, ids) Then Exit Sub
+
+    outDir = GetOutputFolder()
+    baseName = ExportBaseName(prs)
+    ext = LCase$(imageFormat)
+    pxW = 1920
+    If prs.PageSetup.SlideWidth > 0 Then
+        pxH = CLng(pxW * prs.PageSetup.SlideHeight / prs.PageSetup.SlideWidth)
+    Else
+        pxH = 1080
+    End If
+
+    Dim hadBgGuide As Boolean
+    For i = LBound(ids) To UBound(ids)
+        Set sld = FindSlideByID(prs, ids(i))
+        If Not sld Is Nothing Then
+            Set hidden = HideInternalExportShapes(sld)
+            hadBgGuide = SuspendSlideGuideBackground(sld)
+            filePath = outDir & "\" & baseName & "_" & Format$(sld.SlideIndex, "00") & "." & ext
+            If firstPath = "" Then firstPath = filePath
+
+            On Error Resume Next
+            Err.Clear
+            If imageFormat = "PNG" Then
+                sld.Export filePath, "PNG", pxW, pxH
+            Else
+                sld.Export filePath, "SVG"
             End If
-        Next shp
-    Next sld
+            saveErr = Err.Number
+            On Error GoTo 0
+            RestoreSlideGuideBackground sld, hadBgGuide
+            RestoreHiddenShapes hidden
 
-    Set HideGuidesInPresentation = hiddenGuides
+            If saveErr <> 0 Then
+                MsgBox "Could not export " & imageFormat & "." & vbCrLf & _
+                       "This PowerPoint build may not support that format.", _
+                       vbExclamation, "Onion Skin Tools"
+                Exit Sub
+            End If
+        End If
+    Next i
+
+    If firstPath <> "" Then
+        Shell "explorer.exe /select,""" & firstPath & """", vbNormalFocus
+    End If
+End Sub
+
+Public Function ExportSelectedOnly() As Boolean
+    ExportSelectedOnly = (GetSetting(SETTINGS_APP_NAME, SETTINGS_SECTION, SETTINGS_EXPORT_SCOPE, EXPORT_SCOPE_ALL) = EXPORT_SCOPE_SELECTED)
 End Function
 
-Private Sub RestoreHiddenGuides(ByVal hiddenGuides As Collection)
-    Dim item As Variant
+Public Sub SaveExportScope(ByVal scope As String)
+    If scope <> EXPORT_SCOPE_SELECTED Then scope = EXPORT_SCOPE_ALL
+    SaveSetting SETTINGS_APP_NAME, SETTINGS_SECTION, SETTINGS_EXPORT_SCOPE, scope
+    If Not gRibbon Is Nothing Then
+        gRibbon.InvalidateControl "btnExportAllSlides"
+        gRibbon.InvalidateControl "btnExportSelectedSlides"
+        gRibbon.InvalidateControl "btnExportAllSlidesDraw"
+        gRibbon.InvalidateControl "btnExportSelectedSlidesDraw"
+    End If
+End Sub
 
-    If hiddenGuides Is Nothing Then Exit Sub
+Private Function ExportBaseName(ByVal prs As Presentation) As String
+    If prs.path <> "" Then
+        ExportBaseName = Left(prs.Name, InStrRev(prs.Name, ".") - 1)
+    Else
+        ExportBaseName = "OnionExport"
+    End If
+End Function
+
+Private Function FindSlideByID(ByVal prs As Presentation, ByVal slideId As Long) As Slide
+    Dim sld As Slide
+    For Each sld In prs.Slides
+        If sld.SlideID = slideId Then
+            Set FindSlideByID = sld
+            Exit Function
+        End If
+    Next sld
+End Function
+
+Private Function TryGetExportSlideIDs(ByVal prs As Presentation, ByRef ids() As Long) As Boolean
+    Dim i As Long
+    Dim n As Long
+    Dim sld As Slide
+
+    If Not ExportSelectedOnly() Then
+        ReDim ids(1 To prs.Slides.Count)
+        For i = 1 To prs.Slides.Count
+            ids(i) = prs.Slides(i).SlideID
+        Next i
+        TryGetExportSlideIDs = True
+        Exit Function
+    End If
 
     On Error Resume Next
-    For Each item In hiddenGuides
-        item.Visible = msoTrue
-    Next item
+    If Not ActiveWindow Is Nothing Then
+        If ActiveWindow.Selection.Type = ppSelectionSlides Then
+            n = ActiveWindow.Selection.SlideRange.Count
+        End If
+    End If
+    On Error GoTo 0
+
+    If n > 0 Then
+        ReDim ids(1 To n)
+        For i = 1 To n
+            ids(i) = ActiveWindow.Selection.SlideRange(i).SlideID
+        Next i
+        TryGetExportSlideIDs = True
+        Exit Function
+    End If
+
+    On Error Resume Next
+    Set sld = ActiveWindow.View.Slide
+    On Error GoTo 0
+    If sld Is Nothing Then
+        MsgBox "Select one or more slides in the thumbnail pane, or stay on the slide you want to export.", _
+               vbInformation, "Onion Skin Tools"
+        Exit Function
+    End If
+
+    ReDim ids(1 To 1)
+    ids(1) = sld.SlideID
+    TryGetExportSlideIDs = True
+End Function
+
+Private Sub KeepOnlySlidesByID(ByVal prs As Presentation, ByRef keepIDs() As Long)
+    Dim i As Long
+    Dim j As Long
+    Dim keep As Boolean
+
+    For i = prs.Slides.Count To 1 Step -1
+        keep = False
+        For j = LBound(keepIDs) To UBound(keepIDs)
+            If prs.Slides(i).SlideID = keepIDs(j) Then
+                keep = True
+                Exit For
+            End If
+        Next j
+        If Not keep Then prs.Slides(i).Delete
+    Next i
+End Sub
+
+Private Sub RemoveGuidesFromPresentation(ByVal prs As Presentation)
+    Dim sld As Slide
+
+    For Each sld In prs.Slides
+        ClearGuideOnSlide sld
+    Next sld
+End Sub
+
+Private Sub ApplyExportSlideTimings(ByVal prs As Presentation)
+    Dim sld As Slide
+
+    For Each sld In prs.Slides
+        With sld.SlideShowTransition
+            ' Apply the default frame duration when the slide has no explicit user-set timer.
+            ' If no timed advance is set, use the default frame duration.
+            If .AdvanceOnTime <> msoTrue Or .AdvanceTime <= 0 Then
+                .AdvanceOnClick = msoFalse
+                .AdvanceOnTime = msoTrue
+                .AdvanceTime = DEFAULT_FRAME_ADVANCE_SECONDS
+            End If
+        End With
+    Next sld
+
+    On Error Resume Next
+    prs.SlideShowSettings.AdvanceMode = ppSlideShowUseSlideTimings
     On Error GoTo 0
 End Sub
 
-Private Sub ExportViaCopy(ByVal outputFormat As String, ByVal includeGuides As Boolean)
+Private Sub ExportViaCopy(ByVal outputFormat As String)
     Dim originalPres As Presentation
+    Dim ids() As Long
     Set originalPres = ActivePresentation
+    If originalPres Is Nothing Then Exit Sub
+    If Not TryGetExportSlideIDs(originalPres, ids) Then Exit Sub
 
-    ' --- build output path ---
     Dim outputDir As String, baseName As String, suffix As String, ext As String
     outputDir = GetOutputFolder()
     If outputFormat = "gif" Then ext = ".gif" Else ext = ".mp4"
-    suffix = IIf(includeGuides, "_with_guides", "_no_guides")
-
-    If originalPres.Path <> "" Then
-        baseName = Left(originalPres.Name, InStrRev(originalPres.Name, ".") - 1)
-    Else
-        baseName = "OnionExport"
-    End If
+    suffix = ""
+    If ExportSelectedOnly() Then suffix = "_selected"
+    baseName = ExportBaseName(originalPres)
 
     Dim outputPath As String
     outputPath = outputDir & "\" & baseName & suffix & ext
 
-    ' --- working copy in TEMP ---
-    Dim tempPath As String
-    tempPath = Environ("TEMP") & "\OnionExport_" & Format(Now, "yyyymmddhhmmss") & ".pptx"
-
-    Dim copyPres As Presentation
-    Set copyPres = Nothing
-    Dim hiddenGuides As Collection
-    Set hiddenGuides = Nothing
-
-    On Error GoTo CleanFail
-
-    If Not includeGuides Then
-        ' Hide guides in the real presentation only long enough to write
-        ' the temp copy. This is much faster than opening a copy, deleting
-        ' shapes, and saving again; the user's deck is restored immediately.
-        Set hiddenGuides = HideGuidesInPresentation(originalPres)
+    If outputFormat = "gif" And Not ExportSelectedOnly() Then
+        ExportGIFDirect originalPres, outputPath
+    ElseIf outputFormat = "gif" Then
+        ExportGIFFromCopy originalPres, outputPath, ids
+    Else
+        ExportVideoViaCopy originalPres, outputPath, ids
     End If
+End Sub
 
-    ' Macro-free temp copies are smaller and quicker to open/render. If
-    ' PowerPoint refuses that conversion for a particular deck, fall back
-    ' to a macro-enabled temp copy.
+Private Function SaveTempCopy(ByVal prs As Presentation) As String
+    ' Saves a macro-free .pptx copy to TEMP and returns the path.
+    ' Falls back to .pptm if the deck cannot be saved without macros.
+    Dim path As String
+    path = Environ("TEMP") & "\OnionExport_" & format(Now, "yyyymmddhhmmss") & ".pptx"
+
     Dim saveErr As Long
     On Error Resume Next
-    originalPres.SaveCopyAs tempPath, PPT_SAVE_AS_OPEN_XML_PRESENTATION
+    prs.SaveCopyAs path, PPT_SAVE_AS_OPEN_XML_PRESENTATION
     saveErr = Err.Number
     Err.Clear
-    On Error GoTo CleanFail
+    On Error GoTo 0
 
     If saveErr <> 0 Then
-        tempPath = Environ("TEMP") & "\OnionExport_" & Format(Now, "yyyymmddhhmmss") & ".pptm"
-        originalPres.SaveCopyAs tempPath, PPT_SAVE_AS_OPEN_XML_PRESENTATION_MACRO_ENABLED
+        path = Environ("TEMP") & "\OnionExport_" & format(Now, "yyyymmddhhmmss") & ".pptm"
+        prs.SaveCopyAs path, PPT_SAVE_AS_OPEN_XML_PRESENTATION_MACRO_ENABLED
     End If
 
-    RestoreHiddenGuides hiddenGuides
-    Set hiddenGuides = Nothing
+    SaveTempCopy = path
+End Function
 
-    ' Open the already-prepared copy without a window. The guide visibility
-    ' is now baked into the temp file, so the render pipeline sees it without
-    ' needing visible window state or custom ribbon callbacks.
+Private Sub ExportGIFDirect(ByVal originalPres As Presentation, ByVal outputPath As String)
+    ' Fast/direct GIF path: hide guide shapes in the open presentation, export,
+    ' then restore only the guides that were visible before export.
+    Dim hiddenGuides As Collection
+    Dim bgGuideSlides As Collection
+    Dim item As Variant
+    Set hiddenGuides = New Collection
+    Set bgGuideSlides = New Collection
+
+    On Error GoTo GIFCleanFail
+
+    Dim sld As Slide
+    Dim shp As Shape
+    For Each sld In originalPres.Slides
+        If SuspendSlideGuideBackground(sld) Then
+            bgGuideSlides.Add sld
+        End If
+        For Each shp In sld.Shapes
+            If shp.Name = GUIDE_NAME And shp.Visible <> msoFalse Then
+                shp.Visible = msoFalse
+                hiddenGuides.Add shp
+            End If
+        Next shp
+    Next sld
+    DoEvents
+
+    ' --- use 00:00,01 for slides without a defined transition timer ---
+    For Each sld In originalPres.Slides
+        With sld.SlideShowTransition
+            If .AdvanceOnTime <> msoTrue Or .AdvanceTime <= 0 Then
+                .AdvanceOnClick = msoFalse
+                .AdvanceOnTime = msoTrue
+                .AdvanceTime = DEFAULT_FRAME_ADVANCE_SECONDS
+            End If
+        End With
+    Next sld
+
+    On Error Resume Next
+    originalPres.SlideShowSettings.AdvanceMode = ppSlideShowUseSlideTimings
+    On Error GoTo GIFCleanFail
+
+    originalPres.SaveAs outputPath, PPT_SAVE_AS_ANIMATED_GIF
+
+    ' --- restore guide visibility immediately after export ---
+    On Error Resume Next
+    For Each item In bgGuideSlides
+        RestoreSlideGuideBackground item, True
+    Next item
+    For Each item In hiddenGuides
+        item.Visible = msoTrue
+    Next item
+    On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
+    Shell "explorer.exe /select,""" & outputPath & """", vbNormalFocus
+    Exit Sub
+
+GIFCleanFail:
+    Dim errDesc As String
+    errDesc = Err.Description
+
+    ' Restore any guides that were hidden before the failure
+    On Error Resume Next
+    For Each item In bgGuideSlides
+        RestoreSlideGuideBackground item, True
+    Next item
+    For Each item In hiddenGuides
+        item.Visible = msoTrue
+    Next item
+    On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
+    On Error GoTo 0
+
+    MsgBox "Export failed: " & errDesc, vbExclamation, "Onion Skin Tools"
+End Sub
+
+Private Sub ExportGIFFromCopy(ByVal originalPres As Presentation, _
+                              ByVal outputPath As String, _
+                              ByRef keepIDs() As Long)
+    Dim tempPath As String
+    Dim copyPres As Presentation
+
+    On Error GoTo GIFCopyCleanFail
+
+    tempPath = SaveTempCopy(originalPres)
     Set copyPres = Presentations.Open(tempPath, _
         ReadOnly:=msoFalse, _
         Untitled:=msoFalse, _
         WithWindow:=msoFalse)
 
-    If outputFormat = "gif" Then
-        ' Animated GIF export via SaveAs is synchronous on M365 builds.
-        copyPres.SaveAs outputPath, PPT_SAVE_AS_ANIMATED_GIF
-        copyPres.Saved = True
-        copyPres.Close
-        Set copyPres = Nothing
+    KeepOnlySlidesByID copyPres, keepIDs
+    RemoveGuidesFromPresentation copyPres
+    ApplyExportSlideTimings copyPres
+    copyPres.SaveAs outputPath, PPT_SAVE_AS_ANIMATED_GIF
 
-        On Error Resume Next: Kill tempPath: On Error GoTo 0
-
-        On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
-
-        Shell "explorer.exe /select,""" & outputPath & """", vbNormalFocus
-    Else
-        ' Video: CreateVideo runs asynchronously. PowerPoint has no Application.OnTime
-        ' (that is Excel-only), so we poll CreateVideoStatus until done or failed.
-        copyPres.CreateVideo outputPath, True, 5, 1080, 30, 100
-
-        Dim videoStatus As Long
-        Dim probeErr As Long
-        Do
-            DoEvents
-            OST_Sleep 250
-            On Error Resume Next
-            videoStatus = copyPres.CreateVideoStatus
-            probeErr = Err.Number
-            On Error GoTo CleanFail
-            If probeErr <> 0 Then Err.Raise vbObjectError + 3, , "Could not read video export status."
-            If videoStatus = PPT_MEDIA_TASK_DONE Then Exit Do
-            If videoStatus = PPT_MEDIA_TASK_FAILED Then
-                Err.Raise vbObjectError + 2, , "Video encoding failed."
-            End If
-        Loop
-
-        copyPres.Saved = True
-        copyPres.Close
-        Set copyPres = Nothing
-
-        On Error Resume Next: Kill tempPath: On Error GoTo 0
-
-        On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
-
-        Shell "explorer.exe /select,""" & outputPath & """", vbNormalFocus
-    End If
-
+    copyPres.Saved = True
+    copyPres.Close
+    Set copyPres = Nothing
+    On Error Resume Next: Kill tempPath: On Error GoTo 0
+    On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
+    Shell "explorer.exe /select,""" & outputPath & """", vbNormalFocus
     Exit Sub
 
-CleanFail:
+GIFCopyCleanFail:
+    Dim errDesc As String
+    errDesc = Err.Description
+    On Error Resume Next
+    If Not copyPres Is Nothing Then
+        copyPres.Saved = True
+        copyPres.Close
+    End If
+    Kill tempPath
+    On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
+    On Error GoTo 0
+    MsgBox "Export failed: " & errDesc, vbExclamation, "Onion Skin Tools"
+End Sub
+
+Private Sub ExportVideoViaCopy(ByVal originalPres As Presentation, _
+                                ByVal outputPath As String, _
+                                ByRef keepIDs() As Long)
+    Dim tempPath As String
+    Dim copyPres As Presentation
+
+    On Error GoTo VideoCleanFail
+
+    tempPath = SaveTempCopy(originalPres)
+
+    Set copyPres = Presentations.Open(tempPath, _
+        ReadOnly:=msoFalse, _
+        Untitled:=msoFalse, _
+        WithWindow:=msoFalse)
+
+    If ExportSelectedOnly() Then KeepOnlySlidesByID copyPres, keepIDs
+    RemoveGuidesFromPresentation copyPres
+    ApplyExportSlideTimings copyPres
+
+    ' CreateVideo operates on the live in-memory presentation object.
+    copyPres.CreateVideo outputPath, True, DEFAULT_FRAME_ADVANCE_SECONDS, 1080, 30, 100
+
+    Dim videoStatus As Long
+    Dim probeErr As Long
+    Do
+        DoEvents
+        OST_Sleep 250
+        On Error Resume Next
+        videoStatus = copyPres.CreateVideoStatus
+        probeErr = Err.Number
+        On Error GoTo VideoCleanFail
+        If probeErr <> 0 Then Err.Raise vbObjectError + 3, , "Could not read video export status."
+        If videoStatus = PPT_MEDIA_TASK_DONE Then Exit Do
+        If videoStatus = PPT_MEDIA_TASK_FAILED Then
+            Err.Raise vbObjectError + 2, , "Video encoding failed."
+        End If
+    Loop
+
+    copyPres.Saved = True
+    copyPres.Close
+    Set copyPres = Nothing
+
+    On Error Resume Next: Kill tempPath: On Error GoTo 0
+    On Error Resume Next: originalPres.Windows(1).Activate: On Error GoTo 0
+    Shell "explorer.exe /select,""" & outputPath & """", vbNormalFocus
+    Exit Sub
+
+VideoCleanFail:
     Dim errDesc As String
     errDesc = Err.Description
 
     On Error Resume Next
-    RestoreHiddenGuides hiddenGuides
     If Not copyPres Is Nothing Then
         copyPres.Saved = True
         copyPres.Close
@@ -732,24 +853,42 @@ Sub RibbonClearGuides(control As IRibbonControl)
     ClearGuides
 End Sub
 
-Sub RibbonExportGIFNoGuides(control As IRibbonControl)
+Sub RibbonExportGIF(control As IRibbonControl)
     InitOnionEventBridge
-    ExportGIF False
+    ExportGIF
 End Sub
 
-Sub RibbonExportGIFWithGuides(control As IRibbonControl)
+Sub RibbonExportVideo(control As IRibbonControl)
     InitOnionEventBridge
-    ExportGIF True
+    ExportVideo
 End Sub
 
-Sub RibbonExportVideoNoGuides(control As IRibbonControl)
+Sub RibbonExportPNG(control As IRibbonControl)
     InitOnionEventBridge
-    ExportVideo False
+    ExportImages "PNG"
 End Sub
 
-Sub RibbonExportVideoWithGuides(control As IRibbonControl)
+Sub RibbonExportSVG(control As IRibbonControl)
     InitOnionEventBridge
-    ExportVideo True
+    ExportImages "SVG"
+End Sub
+
+Sub RibbonSetExportAllSlides(control As IRibbonControl, pressed As Boolean)
+    If Not pressed Then Exit Sub
+    SaveExportScope EXPORT_SCOPE_ALL
+End Sub
+
+Sub RibbonSetExportSelectedSlides(control As IRibbonControl, pressed As Boolean)
+    If Not pressed Then Exit Sub
+    SaveExportScope EXPORT_SCOPE_SELECTED
+End Sub
+
+Sub RibbonGetExportAllSlides(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = Not ExportSelectedOnly()
+End Sub
+
+Sub RibbonGetExportSelectedSlides(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = ExportSelectedOnly()
 End Sub
 
 Sub RibbonSetOutputFolder(control As IRibbonControl)
@@ -758,14 +897,17 @@ Sub RibbonSetOutputFolder(control As IRibbonControl)
 End Sub
 
 Sub RibbonSetAnimationModeOff(control As IRibbonControl, pressed As Boolean)
+    If Not pressed Then Exit Sub
     SaveAnimationMode ANIMATION_MODE_OFF
 End Sub
 
 Sub RibbonSetAnimationModeClassic(control As IRibbonControl, pressed As Boolean)
+    If Not pressed Then Exit Sub
     SaveAnimationMode ANIMATION_MODE_CLASSIC
 End Sub
 
 Sub RibbonSetAnimationModeDuplicate(control As IRibbonControl, pressed As Boolean)
+    If Not pressed Then Exit Sub
     SaveAnimationMode ANIMATION_MODE_DUPLICATE
 End Sub
 
@@ -779,47 +921,6 @@ End Sub
 
 Sub RibbonGetAnimationModeDuplicate(control As IRibbonControl, ByRef returnedVal)
     returnedVal = (GetAnimationMode() = ANIMATION_MODE_DUPLICATE)
-End Sub
-
-Sub RibbonSetBackground(control As IRibbonControl)
-    InitOnionEventBridge
-    SetSelectedBackgroundShapes
-End Sub
-
-Sub RibbonGetBgEveryNewSlideLabel(control As IRibbonControl, ByRef returnedVal)
-    If GetBackgroundEveryNewSlide() Then
-        returnedVal = "On every new slide (Enter) — On"
-    Else
-        returnedVal = "On every new slide (Enter) — Off"
-    End If
-End Sub
-
-Sub RibbonGetBgEveryNewSlide(control As IRibbonControl, ByRef returnedVal)
-    returnedVal = GetBackgroundEveryNewSlide()
-End Sub
-
-Sub RibbonToggleBgEveryNewSlide(control As IRibbonControl, pressed As Boolean)
-    InitOnionEventBridge
-    SaveBackgroundEveryNewSlide pressed
-End Sub
-
-Sub RibbonGetBackgroundToolsEnabled(control As IRibbonControl, ByRef returnedVal)
-    returnedVal = IsAnimationModeEnabled()
-End Sub
-
-Sub RibbonRemoveSelectedBackground(control As IRibbonControl)
-    InitOnionEventBridge
-    RemoveSelectedBackgroundShapes
-End Sub
-
-Sub RibbonClearBackgroundCurrentSlide(control As IRibbonControl)
-    InitOnionEventBridge
-    ClearBackgroundShapesOnCurrentSlide
-End Sub
-
-Sub RibbonClearBackgroundAllSlides(control As IRibbonControl)
-    InitOnionEventBridge
-    ClearBackgroundShapesOnAllSlides
 End Sub
 
 Sub RibbonOnLoad(ribbon As IRibbonUI)
@@ -879,6 +980,12 @@ Public Sub SaveAnimationMode(ByVal mode As String)
     End Select
 
     If Not gRibbon Is Nothing Then
+        gRibbon.InvalidateControl "btnAnimationModeOff"
+        gRibbon.InvalidateControl "btnAnimationModeClassic"
+        gRibbon.InvalidateControl "btnAnimationModeDuplicate"
+        gRibbon.InvalidateControl "btnAnimationModeOffDraw"
+        gRibbon.InvalidateControl "btnAnimationModeClassicDraw"
+        gRibbon.InvalidateControl "btnAnimationModeDuplicateDraw"
         gRibbon.Invalidate
     End If
 End Sub

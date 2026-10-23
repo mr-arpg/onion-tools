@@ -32,14 +32,14 @@
             label="Animation Mode" size="large"
             imageMso="PasteDuplicate"
             screentip="Choose animation mode"
-            supertip="Choose what happens automatically when a new slide is created. The active mode is highlighted by PowerPoint. Background Shapes tools are available only when a mode other than Off is selected.">
+            supertip="Choose what happens automatically when a new slide is created. The active mode is shown with a check mark.">
             <toggleButton id="btnAnimationModeOff"
               label="Off"
               imageMso="BrowseSelector"
               onAction="RibbonSetAnimationModeOff"
               getPressed="RibbonGetAnimationModeOff"
               screentip="Turn animation mode off"
-              supertip="New slides are created normally. Background shape tools are disabled while Off is selected."/>
+              supertip="New slides are created normally."/>
             <toggleButton id="btnAnimationModeClassic"
               label="Classic"
               imageMso="BrowseSelector"
@@ -57,104 +57,67 @@
           </menu>
         </group>
 
-        <group id="grpBackgroundShapes" label="Background Shapes">
-          <splitButton id="sbSetBackground" size="large" getEnabled="RibbonGetBackgroundToolsEnabled">
-            <button id="btnSetBackground"
-              label="Set Background"
-              imageMso="PictureBrightnessGallery"
-              onAction="RibbonSetBackground"
-              getEnabled="RibbonGetBackgroundToolsEnabled"
-              screentip="Set selected shapes as background"
-              supertip="Creates locked background copies behind the selected shapes. The chosen figures stay editable on this slide. Use the menu to choose whether that background repeats on every new slide when you press Enter."/>
-            <menu id="mnuSetBackground" itemSize="normal">
-              <toggleButton id="btnBgEveryNewSlide"
-                getLabel="RibbonGetBgEveryNewSlideLabel"
-                onAction="RibbonToggleBgEveryNewSlide"
-                getPressed="RibbonGetBgEveryNewSlide"
-                getEnabled="RibbonGetBackgroundToolsEnabled"
-                screentip="Repeat locked background on every new slide"
-                supertip="When On, each time you insert a new slide (Enter), a locked copy of the background shapes is copied from the previous slide. This does not change existing slides — only new ones. When Off, that automatic copy is skipped (guide / duplicate behaviour still runs)."/>
-            </menu>
-          </splitButton>
-          <splitButton id="sbClearBackground" size="large" getEnabled="RibbonGetBackgroundToolsEnabled">
-            <button id="btnClearBackground"
-              label="Clear Background"
-              imageMso="Clear"
-              onAction="RibbonClearBackgroundCurrentSlide"
-              getEnabled="RibbonGetBackgroundToolsEnabled"
-              screentip="Clear background marks on this slide"
-              supertip="Removes background marks from all background shapes on the current slide and unlocks them."/>
-            <menu id="mnuClearBackground" itemSize="normal">
-              <button id="btnClearBackgroundAllSlides"
-                label="Clear background on all slides"
-                imageMso="EraseAllInk"
-                onAction="RibbonClearBackgroundAllSlides"
-                getEnabled="RibbonGetBackgroundToolsEnabled"
-                screentip="Clear background marks everywhere"
-                supertip="Removes background marks from every background shape in the presentation and unlocks them."/>
-            </menu>
-          </splitButton>
-          <button id="btnRemoveSelectedBackground"
-            label="Remove from Background"
-            imageMso="Clear"
-            onAction="RibbonRemoveSelectedBackground"
-            getEnabled="RibbonGetBackgroundToolsEnabled"
-            screentip="Remove selected shapes from background"
-            supertip="Removes the background mark from the selected shapes only and unlocks them."/>
-        </group>
-
         <group id="grpExport" label="Export">
           <splitButton id="sbExport" size="large">
             <button id="btnExport"
-              label="Export GIF"
+              label="Export"
               imageMso="ControlImage"
-              onAction="RibbonExportGIFNoGuides"
-              screentip="Export GIF (no guides)"
-              supertip="Quickly exports the presentation as an animated GIF. Onion-skin guides are hidden so they don't appear in the output. Use the dropdown for other formats or to keep guides visible."/>
+              onAction="RibbonExportGIF"
+              screentip="Export"
+              supertip="Exports an animated GIF. Open the menu for Image, GIF, or Video. Onion-skin guides are left out."/>
             <menu id="mnuExport" itemSize="normal">
-              <menu id="mnuExportGIF"
+              <menu id="mnuExportImage"
+                label="Image"
+                imageMso="PictureInsertFromFile"
+                screentip="Export slide images"
+                supertip="Writes one image per slide. Choose PNG or SVG.">
+                <button id="btnExportPNG"
+                  label="PNG"
+                  imageMso="SaveAsPicture"
+                  onAction="RibbonExportPNG"
+                  screentip="Export PNG"
+                  supertip="Saves each slide as a PNG in the output folder."/>
+                <button id="btnExportSVG"
+                  label="SVG"
+                  imageMso="SaveAsPicture"
+                  onAction="RibbonExportSVG"
+                  screentip="Export SVG"
+                  supertip="Saves each slide as an SVG in the output folder."/>
+              </menu>
+              <button id="btnExportGIF"
                 label="GIF"
                 imageMso="ControlImage"
-                screentip="Export as animated GIF"
-                supertip="Renders the deck as an animated GIF using PowerPoint's built-in encoder.">
-                <button id="btnExportGIFNoGuides"
-                  label="No guides"
-                  imageMso="DeclineInvitation"
-                  onAction="RibbonExportGIFNoGuides"
-                  screentip="Export GIF (no guides)"
-                  supertip="Renders an animated GIF with every onion-skin guide stripped out. Saves to the configured output folder."/>
-                <button id="btnExportGIFWithGuides"
-                  label="With guides"
-                  imageMso="AcceptInvitation"
-                  onAction="RibbonExportGIFWithGuides"
-                  screentip="Export GIF (keeps guides visible)"
-                  supertip="Renders an animated GIF with the onion-skin guides baked in. Saves to the configured output folder."/>
-              </menu>
-              <menu id="mnuExportVideo"
+                onAction="RibbonExportGIF"
+                screentip="Export GIF"
+                supertip="Renders an animated GIF. Onion-skin guides are left out."/>
+              <button id="btnExportVideo"
                 label="Video"
                 imageMso="MovieFromFileInsert"
-                screentip="Export as MP4 video"
-                supertip="Renders the deck as an MP4 (1080p, 30fps) using PowerPoint's built-in encoder. Slide timings and narrations are respected.">
-                <button id="btnExportVideoNoGuides"
-                  label="No guides"
-                  imageMso="DeclineInvitation"
-                  onAction="RibbonExportVideoNoGuides"
-                  screentip="Export video (no guides)"
-                  supertip="Renders an MP4 with every onion-skin guide stripped out. Saves to the configured output folder."/>
-                <button id="btnExportVideoWithGuides"
-                  label="With guides"
-                  imageMso="AcceptInvitation"
-                  onAction="RibbonExportVideoWithGuides"
-                  screentip="Export video (keeps guides visible)"
-                  supertip="Renders an MP4 with the onion-skin guides baked in. Saves to the configured output folder."/>
-              </menu>
+                onAction="RibbonExportVideo"
+                screentip="Export video"
+                supertip="Renders an MP4 (1080p, 30fps). Onion-skin guides are left out."/>
+              <menuSeparator id="sepExportScope"/>
+              <toggleButton id="btnExportAllSlides"
+                label="All slides"
+                imageMso="SlideMaster"
+                onAction="RibbonSetExportAllSlides"
+                getPressed="RibbonGetExportAllSlides"
+                screentip="Export every slide"
+                supertip="Image, GIF, and Video include the whole presentation. This choice is remembered."/>
+              <toggleButton id="btnExportSelectedSlides"
+                label="Selected slides"
+                imageMso="SlideMasterInsert"
+                onAction="RibbonSetExportSelectedSlides"
+                getPressed="RibbonGetExportSelectedSlides"
+                screentip="Export only the selected slides"
+                supertip="Image, GIF, and Video include the slides selected in the thumbnail pane. If none are selected, only the current slide is exported. This choice is remembered."/>
               <menuSeparator id="sepExportSettings"/>
               <button id="btnSetOutputFolder"
                 label="Set output folder..."
                 imageMso="FolderOpen"
                 onAction="RibbonSetOutputFolder"
                 screentip="Choose default output folder"
-                supertip="Pick the folder where exported GIFs and MP4s should be saved. Defaults to the same folder as the active presentation (or Desktop if it has not been saved)."/>
+                supertip="Pick the folder where exports are saved. Defaults to the same folder as the active presentation (or Desktop if it has not been saved)."/>
             </menu>
           </splitButton>
         </group>
@@ -191,14 +154,14 @@
             label="Animation Mode" size="large"
             imageMso="PasteDuplicate"
             screentip="Choose animation mode"
-            supertip="Choose what happens automatically when a new slide is created. The active mode is highlighted by PowerPoint. Background Shapes tools are available only when a mode other than Off is selected.">
+            supertip="Choose what happens automatically when a new slide is created. The active mode is shown with a check mark.">
             <toggleButton id="btnAnimationModeOffDraw"
               label="Off"
               imageMso="BrowseSelector"
               onAction="RibbonSetAnimationModeOff"
               getPressed="RibbonGetAnimationModeOff"
               screentip="Turn animation mode off"
-              supertip="New slides are created normally. Background shape tools are disabled while Off is selected."/>
+              supertip="New slides are created normally."/>
             <toggleButton id="btnAnimationModeClassicDraw"
               label="Classic"
               imageMso="BrowseSelector"
@@ -216,104 +179,67 @@
           </menu>
         </group>
 
-        <group id="grpBackgroundShapesDraw" label="Background Shapes">
-          <splitButton id="sbSetBackgroundDraw" size="large" getEnabled="RibbonGetBackgroundToolsEnabled">
-            <button id="btnSetBackgroundDraw"
-              label="Set Background"
-              imageMso="PictureBrightnessGallery"
-              onAction="RibbonSetBackground"
-              getEnabled="RibbonGetBackgroundToolsEnabled"
-              screentip="Set selected shapes as background"
-              supertip="Creates locked background copies behind the selected shapes. The chosen figures stay editable on this slide. Use the menu to choose whether that background repeats on every new slide when you press Enter."/>
-            <menu id="mnuSetBackgroundDraw" itemSize="normal">
-              <toggleButton id="btnBgEveryNewSlideDraw"
-                getLabel="RibbonGetBgEveryNewSlideLabel"
-                onAction="RibbonToggleBgEveryNewSlide"
-                getPressed="RibbonGetBgEveryNewSlide"
-                getEnabled="RibbonGetBackgroundToolsEnabled"
-                screentip="Repeat locked background on every new slide"
-                supertip="When On, each time you insert a new slide (Enter), a locked copy of the background shapes is copied from the previous slide. This does not change existing slides — only new ones. When Off, that automatic copy is skipped (guide / duplicate behaviour still runs)."/>
-            </menu>
-          </splitButton>
-          <splitButton id="sbClearBackgroundDraw" size="large" getEnabled="RibbonGetBackgroundToolsEnabled">
-            <button id="btnClearBackgroundDraw"
-              label="Clear Background"
-              imageMso="Clear"
-              onAction="RibbonClearBackgroundCurrentSlide"
-              getEnabled="RibbonGetBackgroundToolsEnabled"
-              screentip="Clear background marks on this slide"
-              supertip="Removes background marks from all background shapes on the current slide and unlocks them."/>
-            <menu id="mnuClearBackgroundDraw" itemSize="normal">
-              <button id="btnClearBackgroundAllSlidesDraw"
-                label="Clear background on all slides"
-                imageMso="EraseAllInk"
-                onAction="RibbonClearBackgroundAllSlides"
-                getEnabled="RibbonGetBackgroundToolsEnabled"
-                screentip="Clear background marks everywhere"
-                supertip="Removes background marks from every background shape in the presentation and unlocks them."/>
-            </menu>
-          </splitButton>
-          <button id="btnRemoveSelectedBackgroundDraw"
-            label="Remove from Background"
-            imageMso="Clear"
-            onAction="RibbonRemoveSelectedBackground"
-            getEnabled="RibbonGetBackgroundToolsEnabled"
-            screentip="Remove selected shapes from background"
-            supertip="Removes the background mark from the selected shapes only and unlocks them."/>
-        </group>
-
         <group id="grpExportDraw" label="Export">
           <splitButton id="sbExportDraw" size="large">
             <button id="btnExportDraw"
-              label="Export GIF"
+              label="Export"
               imageMso="ControlImage"
-              onAction="RibbonExportGIFNoGuides"
-              screentip="Export GIF (no guides)"
-              supertip="Quickly exports the presentation as an animated GIF. Onion-skin guides are hidden so they don't appear in the output. Use the dropdown for other formats or to keep guides visible."/>
+              onAction="RibbonExportGIF"
+              screentip="Export"
+              supertip="Exports an animated GIF. Open the menu for Image, GIF, or Video. Onion-skin guides are left out."/>
             <menu id="mnuExportDraw" itemSize="normal">
-              <menu id="mnuExportGIFDraw"
+              <menu id="mnuExportImageDraw"
+                label="Image"
+                imageMso="PictureInsertFromFile"
+                screentip="Export slide images"
+                supertip="Writes one image per slide. Choose PNG or SVG.">
+                <button id="btnExportPNGDraw"
+                  label="PNG"
+                  imageMso="SaveAsPicture"
+                  onAction="RibbonExportPNG"
+                  screentip="Export PNG"
+                  supertip="Saves each slide as a PNG in the output folder."/>
+                <button id="btnExportSVGDraw"
+                  label="SVG"
+                  imageMso="SaveAsPicture"
+                  onAction="RibbonExportSVG"
+                  screentip="Export SVG"
+                  supertip="Saves each slide as an SVG in the output folder."/>
+              </menu>
+              <button id="btnExportGIFDraw"
                 label="GIF"
                 imageMso="ControlImage"
-                screentip="Export as animated GIF"
-                supertip="Renders the deck as an animated GIF using PowerPoint's built-in encoder.">
-                <button id="btnExportGIFNoGuidesDraw"
-                  label="No guides"
-                  imageMso="DeclineInvitation"
-                  onAction="RibbonExportGIFNoGuides"
-                  screentip="Export GIF (no guides)"
-                  supertip="Renders an animated GIF with every onion-skin guide stripped out. Saves to the configured output folder."/>
-                <button id="btnExportGIFWithGuidesDraw"
-                  label="With guides"
-                  imageMso="AcceptInvitation"
-                  onAction="RibbonExportGIFWithGuides"
-                  screentip="Export GIF (keeps guides visible)"
-                  supertip="Renders an animated GIF with the onion-skin guides baked in. Saves to the configured output folder."/>
-              </menu>
-              <menu id="mnuExportVideoDraw"
+                onAction="RibbonExportGIF"
+                screentip="Export GIF"
+                supertip="Renders an animated GIF. Onion-skin guides are left out."/>
+              <button id="btnExportVideoDraw"
                 label="Video"
                 imageMso="MovieFromFileInsert"
-                screentip="Export as MP4 video"
-                supertip="Renders the deck as an MP4 (1080p, 30fps) using PowerPoint's built-in encoder. Slide timings and narrations are respected.">
-                <button id="btnExportVideoNoGuidesDraw"
-                  label="No guides"
-                  imageMso="DeclineInvitation"
-                  onAction="RibbonExportVideoNoGuides"
-                  screentip="Export video (no guides)"
-                  supertip="Renders an MP4 with every onion-skin guide stripped out. Saves to the configured output folder."/>
-                <button id="btnExportVideoWithGuidesDraw"
-                  label="With guides"
-                  imageMso="AcceptInvitation"
-                  onAction="RibbonExportVideoWithGuides"
-                  screentip="Export video (keeps guides visible)"
-                  supertip="Renders an MP4 with the onion-skin guides baked in. Saves to the configured output folder."/>
-              </menu>
+                onAction="RibbonExportVideo"
+                screentip="Export video"
+                supertip="Renders an MP4 (1080p, 30fps). Onion-skin guides are left out."/>
+              <menuSeparator id="sepExportScopeDraw"/>
+              <toggleButton id="btnExportAllSlidesDraw"
+                label="All slides"
+                imageMso="SlideMaster"
+                onAction="RibbonSetExportAllSlides"
+                getPressed="RibbonGetExportAllSlides"
+                screentip="Export every slide"
+                supertip="Image, GIF, and Video include the whole presentation. This choice is remembered."/>
+              <toggleButton id="btnExportSelectedSlidesDraw"
+                label="Selected slides"
+                imageMso="SlideMasterInsert"
+                onAction="RibbonSetExportSelectedSlides"
+                getPressed="RibbonGetExportSelectedSlides"
+                screentip="Export only the selected slides"
+                supertip="Image, GIF, and Video include the slides selected in the thumbnail pane. If none are selected, only the current slide is exported. This choice is remembered."/>
               <menuSeparator id="sepExportSettingsDraw"/>
               <button id="btnSetOutputFolderDraw"
                 label="Set output folder..."
                 imageMso="FolderOpen"
                 onAction="RibbonSetOutputFolder"
                 screentip="Choose default output folder"
-                supertip="Pick the folder where exported GIFs and MP4s should be saved. Defaults to the same folder as the active presentation (or Desktop if it has not been saved)."/>
+                supertip="Pick the folder where exports are saved. Defaults to the same folder as the active presentation (or Desktop if it has not been saved)."/>
             </menu>
           </splitButton>
         </group>

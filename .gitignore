@@ -14,6 +14,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# Local debug logs and trial decks stay off the remote
+debug-*.log
+
 # OS / editor
 .DS_Store
 Thumbs.db
