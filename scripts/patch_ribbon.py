@@ -9,10 +9,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 XML_SRC = os.path.join(REPO_ROOT, "src", "ribbon", "customUI.xml")
 XML_DEST = "customUI/customUI14.xml"
-# customUI14 (2009 schema) must use the 2007 relationship. The 2006
-# relationship plus an ActiveX content type makes PowerPoint ignore the tab.
+# customUI14 (2009 schema) must use the 2007 relationship and the standard
+# application/xml content type (via <Default Extension="xml" .../>). Adding a
+# custom ContentType <Override> makes PowerPoint silently drop the ribbon tab.
 REL_TYPE = "http://schemas.microsoft.com/office/2007/relationships/ui/extensibility"
-CONTENT_TYPE = "application/vnd.ms-office.customui+xml"
 
 # Default target — override with: python patch_ribbon.py "C:\path\to\OnionPPT.ppam"
 DEFAULT_PPTM = os.path.join(
@@ -38,19 +38,16 @@ def patch(pptm_path: str) -> None:
     with open(XML_SRC, "rb") as f:
         data[XML_DEST] = f.read()
 
-    ct = data["[Content_Types].xml"].decode()
-    ct_entry = (
-        '<Override PartName="/customUI/customUI14.xml" '
-        f'ContentType="{CONTENT_TYPE}"/>'
-    )
-    ct_pattern = r'<Override PartName="/customUI/customUI14.xml"[^>]*/>'
-    if re.search(ct_pattern, ct):
-        ct = re.sub(ct_pattern, ct_entry, ct, count=1)
-    else:
-        ct = ct.replace("</Types>", f"  {ct_entry}\n</Types>")
-    data["[Content_Types].xml"] = ct.encode()
+    ct = data["[Content_Types].xml"].decode("utf-8")
+    ct = re.sub(r'\s*<Override PartName="/customUI/customUI(?:14)?\.xml"[^>]*/>', "", ct)
+    if not re.search(r'<Default[^>]*Extension="xml"[^>]*/>', ct):
+        ct = ct.replace(
+            "</Types>",
+            '<Default Extension="xml" ContentType="application/xml"/></Types>',
+        )
+    data["[Content_Types].xml"] = ct.encode("utf-8")
 
-    rel = data["_rels/.rels"].decode()
+    rel = data["_rels/.rels"].decode("utf-8")
     rel_entry = (
         '<Relationship Id="rIdUI" '
         f'Type="{REL_TYPE}" '
@@ -60,8 +57,8 @@ def patch(pptm_path: str) -> None:
     if re.search(rel_pattern, rel):
         rel = re.sub(rel_pattern, rel_entry, rel, count=1)
     else:
-        rel = rel.replace("</Relationships>", f"  {rel_entry}\n</Relationships>")
-    data["_rels/.rels"] = rel.encode()
+        rel = rel.replace("</Relationships>", f"{rel_entry}</Relationships>")
+    data["_rels/.rels"] = rel.encode("utf-8")
 
     with zipfile.ZipFile(pptm_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for name, content in data.items():

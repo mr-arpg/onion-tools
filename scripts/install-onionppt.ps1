@@ -29,6 +29,7 @@ if (-not (Test-Path -LiteralPath $addInsDir)) {
 
 $targetPath = Join-Path $addInsDir ([System.IO.Path]::GetFileName($sourcePath))
 Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+Unblock-File -LiteralPath $targetPath -ErrorAction SilentlyContinue
 
 $powerPoint = $null
 $createdInstance = $false
