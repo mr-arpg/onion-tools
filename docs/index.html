@@ -48,9 +48,37 @@
         <p class="fine">CC BY-NC 4.0 · free to use and share · not for paid work without asking</p>
       </div>
 
-      <figure class="shot">
-        <video class="clip" src="media/hero.mp4" poster="media/hero.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="A pale copy of the previous frame sits on the slide, and the next frame is drawn over it."></video>
-        <figcaption>The pale shape is the last frame. Trace over it, then move on.</figcaption>
+      <figure class="reel is-paused">
+        <div class="reel-stack">
+          <span class="reel-ghost g2" aria-hidden="true"></span>
+          <span class="reel-ghost g1" aria-hidden="true"></span>
+          <div class="reel-frame">
+            <video id="reel" src="media/demo.mp4" poster="media/demo.jpg" width="1280" height="720" muted loop playsinline controls preload="metadata" aria-label="A 35-second tour: tracing the last frame, the Onion Tools tab, Create Guide, Clear Guide, Classic and Duplicate modes, and exporting a GIF."></video>
+            <button class="reel-play" type="button" aria-label="Play the tour" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+            </button>
+            <button class="reel-sound" type="button" aria-pressed="false" hidden>
+              <svg class="icon-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="label">Sound on</span>
+            </button>
+          </div>
+          <button class="reel-badge" type="button" aria-label="Watch from the start with sound" hidden>
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <defs><path id="badge-ring" d="M60 60m-44 0a44 44 0 1 1 88 0a44 44 0 1 1-88 0"/></defs>
+              <g class="ring"><text><textPath href="#badge-ring" textLength="274">WATCH WITH SOUND · 35 SECONDS · </textPath></text></g>
+              <path d="M53 47.5v25l20-12.5z"/>
+            </svg>
+          </button>
+        </div>
+        <ol class="reel-chapters" aria-label="Jump to a part of the tour" hidden>
+          <li><button type="button" data-t="0"><span class="bar"><span class="fill"></span></span>Trace</button></li>
+          <li><button type="button" data-t="7"><span class="bar"><span class="fill"></span></span>Tab</button></li>
+          <li><button type="button" data-t="9.5"><span class="bar"><span class="fill"></span></span>Create</button></li>
+          <li><button type="button" data-t="13"><span class="bar"><span class="fill"></span></span>Clear</button></li>
+          <li><button type="button" data-t="15.5"><span class="bar"><span class="fill"></span></span>Modes</button></li>
+          <li><button type="button" data-t="23.5"><span class="bar"><span class="fill"></span></span>Export</button></li>
+        </ol>
       </figure>
     </div>
 
@@ -144,6 +172,109 @@
         clip.controls = false;
         seen.observe(clip);
       });
+    })();
+
+    (function () {
+      var video = document.getElementById("reel");
+      if (!video) return;
+      var reel = video.closest(".reel");
+      var stack = reel.querySelector(".reel-stack");
+      var play = reel.querySelector(".reel-play");
+      var sound = reel.querySelector(".reel-sound");
+      var badge = reel.querySelector(".reel-badge");
+      var chapters = Array.prototype.slice.call(reel.querySelectorAll(".reel-chapters button"));
+      var starts = chapters.map(function (b) { return parseFloat(b.dataset.t); });
+      var calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var userPaused = calm;
+      var raf = 0;
+
+      video.controls = false;
+      [play, sound, badge, reel.querySelector(".reel-chapters")].forEach(function (el) { el.hidden = false; });
+
+      function setSound(on) {
+        video.muted = !on;
+        sound.setAttribute("aria-pressed", String(on));
+        sound.querySelector(".label").textContent = on ? "Mute" : "Sound on";
+        reel.classList.toggle("has-sound", on);
+      }
+
+      function paint() {
+        var t = video.currentTime;
+        var end = video.duration || 34.5;
+        chapters.forEach(function (b, i) {
+          var a = starts[i];
+          var z = i + 1 < starts.length ? starts[i + 1] : end;
+          b.style.setProperty("--p", Math.min(1, Math.max(0, (t - a) / (z - a))).toFixed(4));
+          b.classList.toggle("is-on", t >= a && t < z);
+        });
+      }
+
+      function loop() {
+        paint();
+        raf = requestAnimationFrame(loop);
+      }
+
+      function start() {
+        video.play().catch(function () {});
+      }
+
+      video.addEventListener("play", function () {
+        reel.classList.remove("is-paused");
+        cancelAnimationFrame(raf);
+        loop();
+      });
+      video.addEventListener("pause", function () {
+        reel.classList.add("is-paused");
+        cancelAnimationFrame(raf);
+        paint();
+      });
+      video.addEventListener("seeked", paint);
+
+      video.addEventListener("click", function () {
+        if (video.paused) { userPaused = false; start(); }
+        else { userPaused = true; video.pause(); }
+      });
+      play.addEventListener("click", function () { userPaused = false; start(); });
+      sound.addEventListener("click", function () {
+        setSound(video.muted);
+        if (!video.muted) { userPaused = false; start(); }
+      });
+      badge.addEventListener("click", function () {
+        video.currentTime = 0;
+        setSound(true);
+        userPaused = false;
+        start();
+      });
+      chapters.forEach(function (b, i) {
+        b.addEventListener("click", function () {
+          video.currentTime = starts[i] + 0.05;
+          userPaused = false;
+          start();
+        });
+      });
+
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) { if (!userPaused) start(); }
+            else if (!video.paused) video.pause();
+          });
+        }, { threshold: 0.3 }).observe(video);
+      } else if (!calm) {
+        start();
+      }
+
+      if (!calm && matchMedia("(pointer: fine)").matches) {
+        stack.addEventListener("pointermove", function (e) {
+          var r = stack.getBoundingClientRect();
+          stack.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 2 - 1).toFixed(3));
+          stack.style.setProperty("--my", ((e.clientY - r.top) / r.height * 2 - 1).toFixed(3));
+        });
+        stack.addEventListener("pointerleave", function () {
+          stack.style.setProperty("--mx", 0);
+          stack.style.setProperty("--my", 0);
+        });
+      }
     })();
   </script>
 </body>
