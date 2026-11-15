@@ -8,6 +8,7 @@
 *.gif
 *.mp4
 !docs/media/*.mp4
+!docs/media/*.gif
 test_*
 
 # Python

@@ -474,6 +474,9 @@ Sub ExportImages(ByVal imageFormat As String)
             End If
             saveErr = Err.Number
             On Error GoTo 0
+            If saveErr <> 0 And imageFormat <> "PNG" Then
+                If ExportSlideAsEmbeddedSvg(sld, filePath, pxW, pxH) Then saveErr = 0
+            End If
             RestoreSlideGuideBackground sld, hadBgGuide
             RestoreHiddenShapes hidden
 
@@ -490,6 +493,60 @@ Sub ExportImages(ByVal imageFormat As String)
         Shell "explorer.exe /select,""" & firstPath & """", vbNormalFocus
     End If
 End Sub
+
+' PowerPoint has no SVG converter on many builds (Slide.Export "SVG" fails even
+' on plain shapes). Fall back to a PNG render wrapped in an SVG file.
+Private Function ExportSlideAsEmbeddedSvg(ByVal sld As Slide, ByVal svgPath As String, _
+                                          ByVal pxW As Long, ByVal pxH As Long) As Boolean
+    Dim pngPath As String
+    Dim b64 As String
+    Dim f As Integer
+
+    pngPath = Environ("TEMP") & "\ost_svg_" & sld.SlideID & "_" & Format$(Now, "hhmmss") & ".png"
+
+    On Error Resume Next
+    Err.Clear
+    sld.Export pngPath, "PNG", pxW, pxH
+    If Err.Number = 0 Then b64 = FileToBase64(pngPath)
+    Kill pngPath
+    Err.Clear
+    On Error GoTo 0
+    If b64 = "" Then Exit Function
+
+    On Error Resume Next
+    Err.Clear
+    f = FreeFile
+    Open svgPath For Output As #f
+    Print #f, "<svg xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" " & _
+              "width=""" & pxW & """ height=""" & pxH & """ viewBox=""0 0 " & pxW & " " & pxH & """>"
+    Print #f, "<image width=""" & pxW & """ height=""" & pxH & """ xlink:href=""data:image/png;base64," & b64 & """/>"
+    Print #f, "</svg>"
+    Close #f
+    ExportSlideAsEmbeddedSvg = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function FileToBase64(ByVal path As String) As String
+    Dim f As Integer
+    Dim bytes() As Byte
+    Dim node As Object
+
+    f = FreeFile
+    Open path For Binary Access Read As #f
+    If LOF(f) = 0 Then
+        Close #f
+        Exit Function
+    End If
+    ReDim bytes(0 To LOF(f) - 1)
+    Get #f, , bytes
+    Close #f
+
+    Set node = CreateObject("MSXML2.DOMDocument.6.0").createElement("b64")
+    node.DataType = "bin.base64"
+    node.nodeTypedValue = bytes
+    FileToBase64 = Replace(Replace(node.Text, vbLf, ""), vbCr, "")
+End Function
 
 Public Function ExportSelectedOnly() As Boolean
     ExportSelectedOnly = (GetSetting(SETTINGS_APP_NAME, SETTINGS_SECTION, SETTINGS_EXPORT_SCOPE, EXPORT_SCOPE_ALL) = EXPORT_SCOPE_SELECTED)

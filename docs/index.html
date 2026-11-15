@@ -27,6 +27,7 @@
       </a>
       <nav class="nav-links" aria-label="Page">
         <a href="#features">Features</a>
+        <a href="#modes">Modes</a>
         <a href="#install">Install</a>
         <a href="https://github.com/mr-arpg/onion-tools">Source</a>
         <a class="button" href="https://github.com/mr-arpg/onion-tools/releases/latest/download/OnionPPT.ppam">Download</a>
@@ -68,26 +69,38 @@
           <h3>Clear Guide</h3>
           <p>Takes it off this slide. Clear All Guides is in the menu.</p>
         </article>
-        <article class="demo">
-          <video class="clip" src="media/classic.mp4" poster="media/classic.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="Animation Mode is set to Classic. A new slide arrives with a guide, and the next frame is drawn over it."></video>
-          <span class="num">03 — Animation Mode</span>
-          <h3>Classic</h3>
-          <p>Every new slide arrives with a guide.</p>
-        </article>
-        <article class="demo">
-          <video class="clip" src="media/duplicate.mp4" poster="media/duplicate.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="Animation Mode is set to Duplicate. A new slide arrives as a copy of the last one, with a guide underneath."></video>
-          <span class="num">04 — Animation Mode</span>
-          <h3>Duplicate</h3>
-          <p>Every new slide starts as a copy of the last, guide underneath.</p>
-        </article>
         <article class="demo wide">
           <video class="clip" src="media/export.mp4" poster="media/export.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="The Export menu offers Image, GIF, and Video, plus All slides or Selected slides."></video>
           <div>
-            <span class="num">05 — Export</span>
+            <span class="num">03 — Export</span>
             <h3>Export</h3>
-            <p>PNG or SVG per slide, a GIF, or an MP4 at 1080p. Guides stay out. All slides, or only the selected ones.</p>
+            <p>PNG or SVG per slide, a GIF, or an MP4 at 1080p. Guides stay out.</p>
+            <figure class="result">
+              <img src="media/result.gif" width="853" height="480" alt="The exported GIF: the hand-drawn W wobbles across five frames.">
+              <figcaption>The GIF it made.</figcaption>
+            </figure>
           </div>
         </article>
+      </div>
+    </section>
+
+    <section class="wrap" id="modes">
+      <div class="versus">
+        <h2>Classic or Duplicate.</h2>
+        <p class="versus-lede">Pick what a new slide does under <strong>Animation Mode</strong>. Off leaves PowerPoint alone.</p>
+        <div class="versus-pair">
+          <div class="side">
+            <video class="clip" src="media/classic.mp4" poster="media/classic.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="Animation Mode is set to Classic. A new slide arrives blank with a guide, and the next frame is drawn over it."></video>
+            <h3>Classic</h3>
+            <p>New slide is blank, with a guide. Redraw the frame.</p>
+          </div>
+          <span class="vs" aria-hidden="true">vs</span>
+          <div class="side">
+            <video class="clip" src="media/duplicate.mp4" poster="media/duplicate.jpg" width="1280" height="684" muted loop playsinline controls preload="metadata" aria-label="Animation Mode is set to Duplicate. A new slide arrives as a copy of the last one, with a guide underneath."></video>
+            <h3>Duplicate</h3>
+            <p>New slide is a copy, with a guide underneath. Nudge what moved.</p>
+          </div>
+        </div>
       </div>
     </section>
 
